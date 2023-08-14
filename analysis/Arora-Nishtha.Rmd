@@ -1,0 +1,421 @@
+---
+title: "Characterising the constituents for the House of Representative members in Victoria"
+subtitle: ETC5512 Assignment 2, Master of Business Analytics
+author: Prepared by Nishtha Arora, 32296622, naro0004@student.monash.edu
+date: '`r Sys.Date()`'
+output: 
+  html_document:
+    css: monashreport.css
+    includes:
+      before_body: header.html
+---
+
+# Introduction
+
+The next Australian federal election will be held in or before 2022 to elect members of the 47th Parliament of Australia. All 151 seats in the lower house, the House of Representatives, and 40 or 76 (depending on whether a double dissolution is called) of the 76 seats in the upper house, the Senate, will be up for election.
+
+This report will help understand the make-up of constituents for elected **Victorian members of the House of Representative**. For this, the data has been used from *['Australian Bureau of Statistics'](https://datapacks.censusdata.abs.gov.au/geopackages/)* and different geopackages for the state Victoria have been extracted for the purpose of analysis. The analysis is done by answering selected questions about the constituents, as mentioned above.
+
+
+```{r global, include = FALSE, echo=TRUE, eval=TRUE}
+knitr:: opts_chunk$set(echo = TRUE, fig.align = "center")
+
+```
+
+```{r setup, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+library(tidyverse)
+library(sf)
+library(here)
+library(kableExtra)
+# library(colr)
+library(glue)
+```
+
+## The selected electoral divions of interest in Victoria are shown below. These divisions include : 
+
+- Melbourne
+
+- Kooyong
+
+- Macnamara
+
+- Chisholm
+
+- Higgins
+
+- Goldstein
+
+- Hotham
+
+```{r}
+
+ogr2ogr(util = "vectortranslate",
+           source = "data/vic-july-2018-esri/E_AUGFN3_region.shp",
+           destination = "data/vic-july-2018-esri/new.shp",
+           options = c("-dim", "XY"))
+```
+
+
+```{r, Reading intro data, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+vic_map <- read_sf(here("data/vic-july-2018-esri/new.shp"))
+```
+
+```{r Filtering intro data, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+vic <- vic_map %>% filter(Elect_div %in% c("Melbourne","Kooyong", "Macnamara", "Chisholm", "Higgins", "Goldstein", "Hotham"))
+```
+
+```{r, Plotting intro, fig.show="hold", out.width="70%", echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+ggplot(vic) +
+   geom_sf(aes(geometry = geometry, fill = Elect_div), 
+                  color = "Black") + 
+   coord_sf(xlim = c(144.9, 145.2), ylim = c(-38.0, -37.75)) +
+   ggtitle("Electoral Divisions of Interest", 
+           subtitle = "Victoria")
+```
+
+
+# 🔍 Analysis
+
+## Q1
+
+To shows **the number of people that lived in each Electoral Division of Interest**.
+
+```{r, Reading data1, warning=FALSE, message=FALSE, eval=TRUE} 
+vic_map <- read_sf(here::here ("data/vic-july-2018-esri/E_AUGFN3_region.shp"))
+
+sa1_geomap <- read_sf(here::here("data/Geopackage_2016_SPCA_for_VIC/census2016_spca_vic_short.gpkg"),  
+                      layer = "census2016_spca_vic_sa1_short") %>%  
+  mutate(centroid = map(geom, st_centroid),
+         centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+         which = as.integer(st_intersects(centroid, vic_map)),
+         Elect_div = ifelse(is.na(which),
+"None",
+                            vic_map$Elect_div[which])) %>% 
+  filter(Elect_div %in% c("Melbourne","Kooyong", "Macnamara", "Chisholm", "Higgins", "Goldstein", "Hotham")) 
+```
+
+````{r, Arranging1, warning=FALSE, message=FALSE, eval=TRUE}
+Q1 <- sa1_geomap %>% 
+  select(Tot_P_P, Elect_div) %>% 
+  group_by(Elect_div) %>%
+  pivot_longer (cols = -c(Elect_div, geom),  names_to = "total_population", values_to = "Sum_of_Population") %>%
+  select(Elect_div, total_population, Sum_of_Population) %>%
+  group_by(Elect_div) %>%
+  summarise(Sum_of_Population= sum(Sum_of_Population)) %>% 
+arrange(desc(Sum_of_Population))
+```
+
+```{r Table1, warning=FALSE, message=FALSE, eval=TRUE}
+knitr::kable(Q1, caption = "No. of people living in each electoral division of interest (Table1)") %>% 
+kable_classic_2(bootstrap_options = "striped", "hover")
+```
+
+In the above table, 'Elect_div' shows the names of selected electoral divisions and 'sum_of_population' shows the total people living in those divisions. It can be seen that the maximum people lived in Melbourne, and Goldstein has the minimum population.
+
+## Q2
+
+To show a bar-plot with the **age distribution** of people of each selected electoral division.
+
+```{r Reading and plotting, warning=FALSE, message=FALSE, eval=TRUE}
+AddQ2 <- sa1_geomap [,grep("^Age_yr_\\d+_[P]",colnames(sa1_geomap))]
+BindQ2 <- cbind(sa1_geomap$Elect_div, AddQ2)
+Q2 <- BindQ2 %>%
+   pivot_longer (cols = -c(sa1_geomap.Elect_div, geom),  names_to = "Age_Groups", values_to = "Age_Distribution") %>%
+  unglue_unnest(Age_Groups, c("Age_yr_{age=\\d+}_{sex=[P]}")) %>% 
+  group_by(sa1_geomap.Elect_div, age) %>% 
+ summarise(count = sum (Age_Distribution)) %>% 
+  mutate(age =as.numeric(age)) %>% 
+  arrange(age, .by_group = TRUE) %>% 
+  mutate(Percentage = (100*count/sum(count)))
+```
+
+```{r Plotting1, warning=FALSE, message=FALSE, eval=TRUE, fig.height=12, fig.width=10, eval=TRUE}
+ggplot(Q2, aes(x = age, 
+                        y = Percentage)) +
+  geom_bar(stat= "identity", position = position_dodge(width = 1)) +
+  facet_grid(sa1_geomap.Elect_div~., scales = "free") +
+    theme(text = element_text(size = 20)) + 
+  theme_gray()
+```
+
+From the plot above, some observations were made, three of them are :
+
+- Chisholm : Here, it is observed that the population from 0 to 60 shows a value of 1, with a slight rise in the age group around 30 and decline in population in 60 to 80 age group.
+
+This could be because: This division is located in the Eastern suburbs of Melbourne and includes many other suburbs too ("Profile of the electoral division of Chisholm (Vic)", 2021). Its **large suburb area**, makes it a **family-friendly environment** i.e. it is away from the main city and a suburb is considered to be a safe place for a child to grow up as it is traffic-free and has open spaces for big family homes and playgrounds. It is also a peaceful place for elderly people to spend their retirement time.
+
+- Kooyong : Here, it is observed that more people are there in 0 to 22 age bracket and less people around the age of 50 to 60. 
+
+This could be because: As  20 or 21 year is the eldest child and corresponds to a parent falling in a comparatively higher age group, the graph shows a higher population value around 50 years. Kooyong is anyway considered as the **second most expensive** suburb of Melbourne with high house prices as well ("Kooyong | Victorian Places", 2021). Therefore, the observation makes it clear that it is a place for **big families** i.e. big houses and rich people.
+
+- Melbourne : Here, there is a rise of population from the age 20 years to 35 years (approximately) and very less children (below 20 years) and  adults (above 35 years).
+
+This observation makes it clear that Melbourne is considered to be a **college-going students city** and has number to colleges and student accommodations ("Melbourne | History, Population, & Facts", 2021). 
+
+## Q3
+
+To show the percentages of **Australian citizens in each selected electoral division**.
+
+```{r Reading and table creation, warning=FALSE, message=FALSE, eval=TRUE}
+Q3read <- sa1_geomap %>% 
+  as.data.frame() %>% 
+  select(Elect_div, Australian_citizen_P) %>% 
+  group_by(Elect_div) %>% 
+  summarise(count = sum(Australian_citizen_P)) %>% 
+  left_join(Q1, Q3read, by = "Elect_div") %>% 
+   mutate(Percentage = (count/Sum_of_Population)*100) %>% 
+  arrange(desc(Percentage))
+Q3 <- Q3read %>% 
+select(Elect_div, Percentage)
+```
+
+```{r Table2, warning=FALSE, message=FALSE, eval=TRUE}
+knitr::kable(Q3, caption = "Australian citizens in each electoral division (Table 2)" ) %>% 
+  kable_classic_2(bootstrap_options = "striped", "hover")
+```
+
+- The lowest percentage of Australian citizens is in Melbourne. This can be due to higher **student-population** in the city. Melbourne is a student oriented city, with world ranking colleges and is a dream place to study for many students across the globe. This makes the city prone to multi-cultural population and a major decline in Australian citizens.
+
+- The second lowest population of Australian citizens is in Macnamara: Since this ares is a port area (Earlier called Melbourne port), it is slowly developing for housing ("Macnamara (Key Seat) - Federal Electorate, Candidates, Results", 2021). It has become more middle class in recent years with **accelerating inner-city gentrification and high density housing developments**. Hence, many citizen are moving from their current location to the port area slowly, making it low in population as of now but not as low as Melbourne.
+
+- The third lowest population of Australian citizens is in Hotham : It is one of Australia's highest Alpine villages and is considered as a **vacation destination** with ski resorts ("Hotham, Ski Victoria, Australia", 2021). Since it is a developed area with accommodation facilities but is considered for vacation purposes and not for residential purposes, the Australian population count is low, but higher than Macnamara and Melbourne.
+
+## Q4
+
+To shows an **estimate of adult (18 years old or older) Australian citizens in each electoral division of interest.**
+
+Assumption:
+- The original data 'sa1_geomap'  includes data for total population i.e. Australian citizens (all age groups) and other migrant population). Hence, by subtracting 'below 18' citizens and 'other-than-citizens' population, we find out the required age group and category of people.
+
+```{r Filtering, warning=FALSE, message=FALSE, eval=TRUE}
+Below18 <- sa1_geomap %>%  select(Age_yr_0_M:Age_yr_79_P, Elect_div, Age_0_4_yr_P, Age_5_14_yr_P, Age_yr_15_P, Age_yr_16_P, Age_yr_17_P, Tot_P_P)
+```
+
+```{r Joining and table creation, warning=FALSE, message=FALSE, eval=TRUE}
+AusCiti <- Below18 %>% 
+    as.data.frame() %>% 
+  select(Elect_div, Tot_P_P) %>% 
+  group_by(Elect_div) %>% 
+  summarise( Australia_citizens=  sum(Tot_P_P)) 
+AusCiti_below18 <- Below18 %>% 
+  as.data.frame() %>% 
+  pivot_longer (cols = c(Age_0_4_yr_P, Age_5_14_yr_P, Age_yr_15_P, Age_yr_16_P, Age_yr_17_P),  names_to = "Below_18_population", values_to = "Number_of_people") %>% 
+  select(Elect_div, Below_18_population, Number_of_people) %>% 
+  group_by(Elect_div) %>% 
+  summarise(Australia_citizens_below18 = sum (Number_of_people)) 
+Join <- left_join(AusCiti, AusCiti_below18, by = "Elect_div") 
+Join$required_population <- (AusCiti$Australia_citizens - AusCiti_below18$Australia_citizens_below18)
+Q4 <- left_join(Join, Q3, by = "Elect_div") %>% 
+  select(Elect_div, required_population, Percentage) %>% 
+  mutate(Adults_above18= round(required_population * Percentage/100))%>%
+select(Elect_div, Adults_above18) %>% 
+  arrange(-(Adults_above18))
+```
+
+```{r Creating table, warning=FALSE, message=FALSE, eval=TRUE} 
+knitr::kable(Q4, caption = "Adult Australian Citizens (above 18) in selected electoral division (Table 3)") %>% 
+kable_classic_2(bootstrap_options = "striped", "hover")
+```
+
+## Q5
+
+To show the **composition of ethnic background of the constituents for each electoral division of interest.**
+
+```{r Reading data2, warning=FALSE, message=FALSE, eval=TRUE}
+sa1_geomap2 <- read_sf(here::here("data/Geopackage_2016_CLDA_for_VIC/census2016_clda_vic_short.gpkg"),  
+                      layer = "census2016_clda_vic_sa1_short") %>% 
+    mutate(centroid = map(geom, st_centroid),
+         centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+         which = as.integer(st_intersects(centroid, vic_map)),
+         Elect_div = ifelse(is.na(which),
+"None",
+                            vic_map$Elect_div[which])) %>% 
+  filter(Elect_div %in% c("Melbourne","Kooyong", "Macnamara", "Chisholm", "Higgins", "Goldstein", "Hotham")) 
+```
+
+```{r Arranging data, warning=FALSE, message=FALSE, eval=TRUE}
+Q5read <- sa1_geomap2 %>% 
+  as.data.frame() %>% 
+  select(contains("Tot_Resp"), Elect_div)
+Ethnic <- Q5read %>% 
+  pivot_longer (cols = -c(Elect_div),  names_to = "Ethnic_Background", values_to = "No_of_constituents") %>%
+  filter(!str_detect(`Ethnic_Background`, "Tot_P")&!str_detect(`Ethnic_Background`, "Other")&!str_detect(`Ethnic_Background`, "Ancestry_NS")) %>% 
+  group_by(Elect_div, `Ethnic_Background`) %>% 
+ summarise(No_of_constituents = sum (No_of_constituents)) %>% 
+  unglue_unnest(`Ethnic_Background`,c("{Ancestry}_Tot_Resp")) %>% 
+  arrange(-(No_of_constituents )) 
+```
+
+```{r Plot formation2,  fig.height=12, fig.width=10, warning=FALSE, message=FALSE, eval=TRUE}
+ggplot(Ethnic, aes(x = No_of_constituents, y = Ancestry,  
+                            group = Elect_div, fill= Ancestry)) +
+  geom_col() +   
+  ggtitle("Ethnic Backgroud in Electoral Divisions") +
+  facet_grid(Elect_div~.) +  
+  theme_classic() +
+  theme(axis.text = element_text(size = 5)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+From the graph above, top 10 ethnic backgrounds can be read for each electoral division.
+
+Observation : It is observed that in all the regions, the top  ethnic background is 'English', other than for Hotham and Chisholm, where the leading ancestry is 'Chinese'. 
+
+## Q6
+
+To show **distribution of religious background in each electoral district of interest.**
+
+```{r Reading data3, warning=FALSE, message=FALSE, eval=TRUE}
+sa1_geomap3 <- read_sf(here::here("data/Geopackage_2016_CLDH_for_VIC/census2016_cldh_vic_short.gpkg"),  
+                      layer = "census2016_cldh_vic_sa1_short") %>%  
+  mutate(centroid = map(geom, st_centroid),
+         centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+         which = as.integer(st_intersects(centroid, vic_map)),
+         Elect_div = ifelse(is.na(which),
+"None",
+                            vic_map$Elect_div[which])) %>%
+  filter(Elect_div %in% c("Melbourne","Kooyong", "Macnamara", "Chisholm", "Higgins", "Goldstein", "Hotham"))
+```
+
+```{r Arranging and filtering3, warning=FALSE, message=FALSE, eval=TRUE}
+Q6read <- sa1_geomap3 %>% 
+  select(ends_with("_P"),
+         Elect_div)
+Q6select <- Q6read %>% 
+  select(Elect_div, Buddhism_P :Other_Religions_Tot_P)
+
+Q6 <- pivot_longer(Q6select, cols = -c(Elect_div,geom), names_to = "Religious_Background", values_to = "Count_of_people") %>% 
+  group_by(Elect_div, Religious_Background) %>% 
+  summarise(Count_of_people=sum(Count_of_people)) %>% 
+  filter(!str_detect(`Religious_Background`, "Christianity_Tot_P"))
+```
+
+```{r Plot formation, fig.height=12, fig.width=10, warning=FALSE, message=FALSE, eval=TRUE}
+ggplot(Q6, aes(x = Count_of_people, y = Religious_Background,
+                            group = Elect_div, fill= Count_of_people)) +
+  geom_col() +   
+   ggtitle("Religious Backgroud in Electoral Divisions") +
+  facet_grid(Elect_div~.) +  
+  theme_classic()+
+  theme(axis.text = element_text(size = 5))+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+The top religious background's of various electoral divisions can be seen from the graph above.
+
+Observation : It is observed that in all the divisions, Christianity (Catholic) is common among maximum people.
+
+## Q7
+
+To show the **level of highest qualification the person has completed for each electoral division of interest.**
+
+```{r Reading data4, warning=FALSE, message=FALSE, eval=TRUE}
+sa1_geomap4 <- read_sf(here::here("data/Geopackage_2016_EQA_for_VIC/census2016_eqa_vic_short.gpkg"),  
+                      layer = "census2016_eqa_vic_sa1_short") %>%  
+  mutate(centroid = map(geom, st_centroid),
+         centroid = st_as_sfc(centroid, crs = st_crs(vic_map)),
+         which = as.integer(st_intersects(centroid, vic_map)),
+         Elect_div = ifelse(is.na(which),
+"None",
+                            vic_map$Elect_div[which])) %>%
+  
+  filter(Elect_div %in% c("Melbourne","Kooyong", "Macnamara", "Chisholm", "Higgins", "Goldstein", "Hotham"))
+
+```
+
+```{r Filtering and Plotting, warning=FALSE, message=FALSE, eval=TRUE}
+Q7 <- sa1_geomap4 %>% 
+ as.data.frame() %>% 
+    select(Elect_div, Pre_school_P, contains("Total")) %>% 
+  select(starts_with("P"), Elect_div) %>% 
+  pivot_longer(cols = -c(Elect_div),names_to = "Level_of_Education", values_to = "Total_People") %>% 
+ filter(!str_detect(`Level_of_Education`, "P_Tot_Total"))
+```
+
+```{r Plotting2, fig.height=12, fig.width=10, warning=FALSE, message=FALSE, eval=TRUE }
+ggplot(Q7, aes(x = Total_People, y = Level_of_Education,
+                            group = Elect_div, fill = Elect_div)) +
+geom_col() +   
+  ggtitle("Level of education in Electoral Divisions") +
+  facet_grid(Elect_div~.) +  
+   theme_classic() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+```
+
+
+For every electoral division, the highest qualification achieved is a Bachelors degree.
+
+Observation : It can also be seen that, maximum number of post graduate degrees have been completed in Melbourne.
+
+## Q8
+
+Sources and Data set names:
+
+For electoral district geographical boundaries
+- Using site [Australian Electoral Commission](https://www.aec.gov.au/electorates/gis/licence.htm).
+- Agreeing with the license to downloaded the 2018 ESRI (.shp) zip file for Victoria and used 'E_AUGFN3_region.shp' file.
+
+
+For SA1 geographical boundaries
+
+- Using site ['Australian Bureau of Statistics'](https://datapacks.censusdata.abs.gov.au/geopackages/)
+
+GeoPackages (2016 Census GeoPackages) and data sets used after opening above site.:
+
+1. For SPCA : 
+- Selecting : State = Victoria, Topic = Selected Person Characteristics (SPC), GeoPackage = SPC GeoPackage A to download Victoria 2016 Census SPCA data
+
+- Metadata used : 'DataPack_to_GeoPackage_Lookup_SPCA ' to import GeoPackage data with SA1 regions.
+
+2. For CLDA: 
+- Selecting : State = Victoria, Topic = Cultural and Language Diversity (CLD), GeoPackage = CLD GeoPackage A to download Victoria 2016 Census CLDA data
+
+- Metadata used : 'DataPack_to_GeoPackage_Lookup_CLDA ' to import GeoPackage data with SA1 regions.
+ 
+3. For CLDH: 
+- Selecting : State = Victoria, Topic = Cultural and Language Diversity (CLD), GeoPackage = CLD GeoPackage H to download Victoria 2016 Census CLDH data
+
+- Metadata used : 'DataPack_to_GeoPackage_Lookup_CLDH ' to import GeoPackage data with SA1 regions. 
+   
+4. For EQA: 
+- Selecting : State = Victoria, Topic = Education and Qualifications (EQ), GeoPackage = EQ GeoPackage A to download Victoria 2016 Census EQA data
+
+- Metadata used : 'DataPack_to_GeoPackage_Lookup_EQA ' to import GeoPackage data with SA1 regions. 
+
+## References
+
+[1] Wickham et al., (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686,
+  https://doi.org/10.21105/joss.01686
+  
+[2] Pebesma, E., 2018. Simple Features for R: Standardized Support for Spatial Vector Data. The R Journal 10
+  (1), 439-446, https://doi.org/10.32614/RJ-2018-009
+  
+[3] Hao Zhu (2021). kableExtra: Construct Complex Table with 'kable' and Pipe Syntax. R package version 1.3.4.
+  https://CRAN.R-project.org/package=kableExtra
+  
+[4]  Louis Chaillet (2017). colr: Functions to Select and Rename Data. R package version 0.1.900.
+  https://CRAN.R-project.org/package=colr
+  
+[5] Antoine Fabri (2020). unglue: Extract Matched Substrings Using a Pattern. R package version 0.1.0.
+  https://CRAN.R-project.org/package=unglue
+  
+[6] H. Wickham. ggplot2: Elegant Graphics for Data Analysis. Springer-Verlag New York, 2016.
+
+[7] Profile of the electoral division of Chisholm (Vic). (2021). Retrieved 14 May 2021, from https://www.aec.gov.au/profiles/vic/chisholm.htm
+
+[8] Kooyong | Victorian Places. (2021). Retrieved 14 May 2021, from https://www.victorianplaces.com.au/kooyong
+
+[9] Melbourne | History, Population, & Facts. (2021). Retrieved 14 May 2021, from https://www.britannica.com/place/Melbourne
+
+[10] Hotham, Ski Victoria, Australia. (2021). Retrieved 14 May 2021, from https://www.visitmelbourne.com/Things-to-do/Outdoor-activities/Skiing/Hotham
+
+[11] Macnamara (Key Seat) - Federal Electorate, Candidates, Results. (2021). Retrieved 14 May 2021, from https://www.abc.net.au/news/elections/federal/2019/guide/macn
+
+
+
+
+
+
